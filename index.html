@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Voice Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#E8ECF4;
+    --ink:#18213B;
+    --muted:#5D6988;
+    --accent:#3B5BFF;
+    --accent-soft:#9DB1FF;
+    --you:#17B6A0;
+    --surface:#FFFFFF;
+    --line:#CBD3E6;
+    --danger:#C8344B;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0F1426;
+      --ink:#EEF1FA;
+      --muted:#97A3C4;
+      --accent:#6F88FF;
+      --accent-soft:#3A4A9E;
+      --you:#2ED3BB;
+      --surface:#1A2140;
+      --line:#2B3560;
+      --danger:#FF7C8F;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);
+  }
+  .page{
+    min-height:100dvh;
+    display:grid;
+    grid-template-rows:auto 1fr auto;
+    max-width:720px;
+    margin:0 auto;
+    padding:24px 24px 36px;
+  }
+  header{display:flex;align-items:center;justify-content:space-between}
+  .brand{font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
+  #timer{
+    font-variant-numeric:tabular-nums;
+    color:var(--muted);
+    font-size:.95rem;
+    min-width:3.5ch;
+    text-align:right;
+    visibility:hidden;
+  }
+  [data-state="live"] #timer,[data-state="waiting"] #timer{visibility:visible}
+
+  main{display:grid;place-items:center;align-content:center;gap:40px;text-align:center}
+
+  /* ---- Orb ---- */
+  .stage{
+    --lvl:0;
+    position:relative;
+    width:clamp(190px,48vmin,330px);
+    aspect-ratio:1;
+    display:grid;
+    place-items:center;
+  }
+  .ring{
+    position:absolute;inset:0;
+    border-radius:50%;
+    border:1.5px solid var(--accent);
+    opacity:0;
+    transform:scale(1);
+    pointer-events:none;
+  }
+  [data-state="live"] .ring{
+    opacity:calc(var(--lvl) * .8);
+    transform:scale(calc(1.06 + var(--lvl) * .55));
+  }
+  [data-state="live"] .ring.two{
+    opacity:calc(var(--lvl) * .45);
+    transform:scale(calc(1.14 + var(--lvl) * 1.0));
+  }
+  [data-speaker="you"] .ring{border-color:var(--you)}
+
+  .breath{width:100%;height:100%}
+  [data-state="idle"] .breath,
+  [data-state="waiting"] .breath,
+  [data-state="connecting"] .breath{animation:breathe 5s ease-in-out infinite}
+  [data-state="connecting"] .breath{animation-duration:1.6s}
+  @keyframes breathe{50%{transform:scale(1.045)}}
+
+  .orb{
+    position:relative;
+    width:100%;height:100%;
+    border-radius:50%;
+    background:radial-gradient(circle at 32% 26%, #fff 0%, var(--accent-soft) 26%, var(--accent) 66%, #1D2FB8 100%);
+    box-shadow:
+      inset -14px -18px 36px rgba(10,20,110,.35),
+      inset 10px 12px 26px rgba(255,255,255,.35),
+      0 24px 60px -18px color-mix(in srgb, var(--accent) 55%, transparent);
+    transform:scale(calc(1 + var(--lvl) * .26));
+    transition:transform .09s linear, filter .4s ease;
+    overflow:hidden;
+  }
+  .orb::after{
+    content:"";
+    position:absolute;inset:0;border-radius:50%;
+    background:radial-gradient(circle at 32% 26%, #fff 0%, #8FF0DF 24%, var(--you) 64%, #087A6A 100%);
+    opacity:0;
+    transition:opacity .35s ease;
+  }
+  [data-speaker="you"] .orb::after{opacity:1}
+  [data-state="idle"] .orb,[data-state="error"] .orb{filter:saturate(.55) brightness(1.04)}
+  [data-state="error"] .orb{filter:grayscale(.9) brightness(1.05)}
+
+  /* ---- Text ---- */
+  .copy{min-height:5.5rem}
+  h1{
+    margin:0;
+    font-size:clamp(1.7rem,5vw,2.4rem);
+    font-weight:500;
+    letter-spacing:-.025em;
+    line-height:1.1;
+  }
+  #sub{
+    margin:10px auto 0;
+    color:var(--muted);
+    font-size:1.02rem;
+    line-height:1.45;
+    max-width:36ch;
+  }
+  [data-state="error"] h1{color:var(--danger)}
+
+  /* ---- Controls ---- */
+  .controls{display:flex;justify-content:center;align-items:center;gap:12px}
+  button{
+    font:inherit;
+    display:inline-flex;align-items:center;justify-content:center;gap:10px;
+    border:0;cursor:pointer;
+    border-radius:999px;
+    transition:transform .12s ease, background .2s ease, opacity .2s ease;
+  }
+  button:active:not(:disabled){transform:scale(.97)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+  svg{width:20px;height:20px;flex:none}
+
+  #call{
+    height:56px;padding:0 30px;
+    background:var(--accent);color:#fff;
+    font-weight:600;font-size:1.05rem;
+  }
+  #call:hover:not(:disabled){background:color-mix(in srgb, var(--accent) 88%, #000)}
+  #call[data-mode="end"]{background:#D93A4F;color:#fff}
+  #call[data-mode="end"]:hover:not(:disabled){background:#BF2C41}
+
+  #mute{
+    width:56px;height:56px;
+    background:var(--surface);color:var(--ink);
+    border:1px solid var(--line);
+  }
+  #mute[aria-pressed="true"]{background:var(--danger);color:#fff;border-color:transparent}
+
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  #audio{display:none}
+
+  @media (prefers-reduced-motion: reduce){
+    .breath{animation:none !important}
+    .orb,.ring{transition:none}
+  }
+</style>
+</head>
+<body>
+<div class="page" id="app">
+  <header>
+    <div class="brand">Voice Agent</div>
+    <div id="timer" aria-hidden="true">0:00</div>
+  </header>
+
+  <main>
+    <div class="stage" id="stage" data-state="idle" data-speaker="none">
+      <div class="ring two"></div>
+      <div class="ring"></div>
+      <div class="breath"><div class="orb"></div></div>
+    </div>
+
+    <div class="copy" aria-live="polite">
+      <h1 id="status">Ready when you are</h1>
+      <p id="sub">Start a call and talk naturally.</p>
+    </div>
+
+    <div class="controls">
+      <button id="mute" type="button" aria-pressed="false" disabled>
+        <svg id="ico-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        <svg id="ico-mic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M3 3l18 18M9 9v2a3 3 0 0 0 5 2.2M15 9.3V6a3 3 0 0 0-5.7-1.3M5 11a7 7 0 0 0 11.2 5.6M19 11a7 7 0 0 1-.6 2.8M12 18v3"/></svg>
+        <span class="sr" id="mute-label">Mute microphone</span>
+      </button>
+      <button id="call" type="button" data-mode="start">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>
+        <span>Start call</span>
+      </button>
+    </div>
+  </main>
+
+  <div id="audio"></div>
+</div>
+
+<script>
+const API = "https://token.nazif.in";
+const { Room, RoomEvent, Track } = LivekitClient;
+
+const $ = (id) => document.getElementById(id);
+const stage = $("stage"), statusEl = $("status"), subEl = $("sub");
+const callBtn = $("call"), callLabel = callBtn.querySelector("span");
+const muteBtn = $("mute"), timerEl = $("timer"), audioBox = $("audio");
+
+let room = null, raf = 0, timerId = 0, agentTimer = 0;
+let startedAt = 0, muted = false, lvl = 0, lastSpeaker = "none", hadError = false;
+
+function setUI(state, title, sub = "") {
+  stage.dataset.state = state;
+  statusEl.textContent = title;
+  subEl.textContent = sub;
+}
+
+function setMuted(value) {
+  muted = value;
+  muteBtn.setAttribute("aria-pressed", String(value));
+  $("ico-mic").hidden = value;
+  $("ico-mic-off").hidden = !value;
+  $("mute-label").textContent = value ? "Unmute microphone" : "Mute microphone";
+}
+
+function fmt(s) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+
+function startTimer() {
+  startedAt = Date.now();
+  timerEl.textContent = "0:00";
+  timerId = setInterval(() => { timerEl.textContent = fmt(Math.floor((Date.now() - startedAt) / 1000)); }, 500);
+}
+
+/* Drives the orb from live audio levels (agent voice or your mic) */
+function tick() {
+  if (room) {
+    let remote = 0, agentTalking = false;
+    room.remoteParticipants.forEach((p) => {
+      remote = Math.max(remote, p.audioLevel || 0);
+      if (p.isSpeaking) agentTalking = true;
+    });
+    const local = muted ? 0 : (room.localParticipant.audioLevel || 0);
+    const youTalking = !muted && room.localParticipant.isSpeaking;
+
+    const speaker = agentTalking ? "agent" : youTalking ? "you" : "none";
+    const target = Math.min(1, (agentTalking ? remote : local) * 2.4);
+    lvl += (target - lvl) * 0.28;
+    stage.style.setProperty("--lvl", lvl.toFixed(3));
+
+    if (speaker !== lastSpeaker) {
+      lastSpeaker = speaker;
+      stage.dataset.speaker = speaker;
+      if (stage.dataset.state === "live") {
+        if (speaker === "agent") setUI("live", "Speaking", "");
+        else if (speaker === "you") setUI("live", "Listening", "");
+        else setUI("live", "Listening", "Speak any time.");
+      }
+    }
+  }
+  raf = requestAnimationFrame(tick);
+}
+
+function agentJoined() {
+  clearTimeout(agentTimer);
+  if (stage.dataset.state === "waiting") {
+    setUI("live", "Listening", "Speak any time.");
+    startTimer();
+  }
+}
+
+function cleanup() {
+  cancelAnimationFrame(raf);
+  clearInterval(timerId);
+  clearTimeout(agentTimer);
+  audioBox.innerHTML = "";
+  room = null;
+  lvl = 0; lastSpeaker = "none";
+  stage.style.setProperty("--lvl", 0);
+  stage.dataset.speaker = "none";
+  setMuted(false);
+  muteBtn.disabled = true;
+  callBtn.disabled = false;
+  callBtn.dataset.mode = "start";
+  callLabel.textContent = "Start call";
+}
+
+function friendly(err) {
+  if (err && (err.name === "NotAllowedError" || /permission|denied/i.test(err.message || "")))
+    return "Microphone access is blocked. Allow it in your browser settings, then try again.";
+  if (err && /Failed to fetch|NetworkError/i.test(err.message || ""))
+    return "Couldn't reach the server. Check your connection and try again.";
+  return (err && err.message) || "Something went wrong. Please try again.";
+}
+
+async function start() {
+  hadError = false;
+  callBtn.disabled = true;
+  setUI("connecting", "Connecting…", "Setting up a secure call.");
+
+  try {
+    const res = await fetch(`${API}/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "web-user", overrides: {} }),
+    });
+    if (!res.ok) throw new Error(`Couldn't start the call (error ${res.status}).`);
+    const { url, token } = await res.json();
+
+    room = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+
+    room.on(RoomEvent.TrackSubscribed, (track) => {
+      if (track.kind === Track.Kind.Audio) audioBox.appendChild(track.attach());
+    });
+    room.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()));
+    room.on(RoomEvent.ParticipantConnected, agentJoined);
+    room.on(RoomEvent.Disconnected, () => {
+      const wasError = hadError;
+      cleanup();
+      if (!wasError) setUI("idle", "Call ended", "Start another call any time.");
+    });
+
+    await room.connect(url, token);
+    await room.startAudio().catch(() => {});
+    await room.localParticipant.setMicrophoneEnabled(true);
+
+    callBtn.disabled = false;
+    callBtn.dataset.mode = "end";
+    callLabel.textContent = "End call";
+    muteBtn.disabled = false;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
+
+    if (room.remoteParticipants.size > 0) {
+      setUI("waiting", "", "");
+      agentJoined();
+    } else {
+      setUI("waiting", "Waiting for the agent…", "This usually takes a few seconds.");
+      agentTimer = setTimeout(() => {
+        if (stage.dataset.state === "waiting")
+          setUI("waiting", "Still waiting…", "The agent is taking longer than usual. You can end the call and try again.");
+      }, 15000);
+    }
+  } catch (err) {
+    hadError = true;
+    if (room) { try { await room.disconnect(); } catch {} }
+    cleanup();
+    setUI("error", "Couldn't connect", friendly(err));
+  }
+}
+
+async function end() {
+  callBtn.disabled = true;
+  if (room) await room.disconnect();
+}
+
+callBtn.addEventListener("click", () => {
+  if (callBtn.dataset.mode === "end") end(); else start();
+});
+
+muteBtn.addEventListener("click", async () => {
+  if (!room) return;
+  const next = !muted;
+  await room.localParticipant.setMicrophoneEnabled(!next);
+  setMuted(next);
+});
+
+window.addEventListener("beforeunload", () => { if (room) room.disconnect(); });
+</script>
+</body>
+</html>
