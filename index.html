@@ -224,6 +224,18 @@
   }
   #ob-result[data-ok="false"]{color:var(--danger)}
   #ob-result[hidden]{display:none}
+
+
+    #outbound input,#outbound textarea{
+    display:block;width:100%;margin-top:6px;
+    font:inherit;font-size:1rem;
+    color:var(--ink);background:var(--bg);
+    border:1px solid var(--line);border-radius:12px;
+  }
+  #outbound input{height:44px;padding:0 14px}
+  #outbound textarea{min-height:96px;padding:10px 14px;resize:vertical;line-height:1.4}
+  #outbound input:focus-visible,
+  #outbound textarea:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
 </style>
 </head>
 <body>
@@ -279,7 +291,7 @@
       <input id="ob-name" name="name" type="text" placeholder="naazif" required>
     </label>
 <label>PROMPT
-  <textarea id="ob-prompt" name="prompt" required></textarea>
+<textarea id="ob-prompt" name="prompt" placeholder="One task per line, e.g.&#10;Tell  good morning&#10;Remind  to have breakfast" required></textarea>
 </label>
     <label>API key (body)
       <input id="ob-body-key" name="bodyKey" type="password" required>
@@ -485,10 +497,11 @@ obForm.addEventListener("submit", async (e) => {
   obResult.hidden = true;
 
   try {
-    let phone = $("ob-phone").value.trim().replace(/[\s\-\(\)]/g, ""); // strip common formatting
-if (phone && !phone.startsWith("+91")) {
-  phone = phone.startsWith("91") ? `+${phone}` : `+91${phone}`;
-}
+       let phone = $("ob-phone").value.trim().replace(/[\s\-()]/g, ""); // strip formatting
+    if (!phone.startsWith("+")) {
+      if (/^91\d{10}$/.test(phone)) phone = "+" + phone;                  // 919876543210
+      else if (/^0?\d{10}$/.test(phone)) phone = "+91" + phone.replace(/^0/, ""); // 9876543210 or 09876543210
+    }
     const response = await fetch(`${API}/call`, {
       method: "POST",
       headers: {
