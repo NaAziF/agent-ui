@@ -399,6 +399,14 @@ function friendly(err) {
     return "Couldn't reach the server. Check your connection and try again.";
   return (err && err.message) || "Something went wrong. Please try again.";
 }
+  function getKey() {
+  let k = sessionStorage.getItem("va_key") || "";
+  if (!k) {
+    k = (prompt("Enter API key") || "").trim();
+    if (k) sessionStorage.setItem("va_key", k);
+  }
+  return k;
+}
 
 async function start() {
   hadError = false;
@@ -406,11 +414,18 @@ async function start() {
   setUI("connecting", "Connecting…", "Setting up a secure call.");
 
   try {
+       const key = getKey();
+    if (!key) throw new Error("An API key is required to start a call.");
+
     const res = await fetch(`${API}/token`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-API-Key": key },
       body: JSON.stringify({ name: "web-user", overrides: {} }),
     });
+    if (res.status === 401) {
+      sessionStorage.removeItem("va_key");
+      throw new Error("Wrong API key. Click Start call to try again.");
+    }
     if (!res.ok) throw new Error(`Couldn't start the call (error ${res.status}).`);
     const { url, token } = await res.json();
 
